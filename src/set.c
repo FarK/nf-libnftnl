@@ -19,6 +19,7 @@
 #include <netinet/in.h>
 #include <limits.h>
 #include <errno.h>
+#include <ctype.h>
 
 #include <libmnl/libmnl.h>
 #include <linux/netfilter/nfnetlink.h>
@@ -91,6 +92,7 @@ void nftnl_set_unset(struct nftnl_set *s, uint16_t attr)
 	case NFTNL_SET_DESC_SIZE:
 	case NFTNL_SET_TIMEOUT:
 	case NFTNL_SET_GC_INTERVAL:
+	case NFTNL_SET_USERDATA:
 		break;
 	default:
 		return;
@@ -167,6 +169,10 @@ void nftnl_set_set_data(struct nftnl_set *s, uint16_t attr, const void *data,
 	case NFTNL_SET_GC_INTERVAL:
 		s->gc_interval = *((uint32_t *)data);
 		break;
+	case NFTNL_SET_USERDATA:
+		s->user.data = (void *)data;
+		s->user.len  = data_len;
+		break;
 	}
 	s->flags |= (1 << attr);
 }
@@ -240,6 +246,9 @@ const void *nftnl_set_get_data(struct nftnl_set *s, uint16_t attr,
 	case NFTNL_SET_GC_INTERVAL:
 		*data_len = sizeof(uint32_t);
 		return &s->gc_interval;
+	case NFTNL_SET_USERDATA:
+		*data_len = s->user.len;
+		return s->user.data;
 	}
 	return NULL;
 }
@@ -348,6 +357,8 @@ void nftnl_set_nlmsg_build_payload(struct nlmsghdr *nlh, struct nftnl_set *s)
 		mnl_attr_put_u64(nlh, NFTA_SET_TIMEOUT, htobe64(s->timeout));
 	if (s->flags & (1 << NFTNL_SET_GC_INTERVAL))
 		mnl_attr_put_u32(nlh, NFTA_SET_GC_INTERVAL, htonl(s->gc_interval));
+	if (s->flags & (1 << NFTNL_SET_USERDATA))
+		mnl_attr_put(nlh, NFTA_SET_USERDATA, s->user.len, s->user.data);
 }
 EXPORT_SYMBOL_ALIAS(nftnl_set_nlmsg_build_payload, nft_set_nlmsg_build_payload);
 
@@ -374,6 +385,10 @@ static int nftnl_set_parse_attr_cb(const struct nlattr *attr, void *data)
 	case NFTA_SET_POLICY:
 	case NFTA_SET_GC_INTERVAL:
 		if (mnl_attr_validate(attr, MNL_TYPE_U32) < 0)
+			abi_breakage();
+		break;
+	case NFTA_SET_USERDATA:
+		if (mnl_attr_validate(attr, MNL_TYPE_BINARY) < 0)
 			abi_breakage();
 		break;
 	case NFTA_SET_TIMEOUT:
@@ -479,6 +494,20 @@ int nftnl_set_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_set *s)
 	if (tb[NFTA_SET_GC_INTERVAL]) {
 		s->gc_interval = ntohl(mnl_attr_get_u32(tb[NFTA_SET_GC_INTERVAL]));
 		s->flags |= (1 << NFTNL_SET_GC_INTERVAL);
+	}
+	if (tb[NFTA_SET_USERDATA]) {
+		const void *udata =
+			mnl_attr_get_payload(tb[NFTA_SET_USERDATA]);
+
+		if (s->user.data)
+			xfree(s->user.data);
+
+		s->user.len  = mnl_attr_get_payload_len(tb[NFTA_SET_USERDATA]);
+		s->user.data = malloc(s->user.len);
+		if (s->user.data == NULL)
+			return -1;
+		memcpy(s->user.data, udata, s->user.len);
+		s->flags |= (1 << NFTNL_SET_USERDATA);
 	}
 	if (tb[NFTA_SET_DESC])
 		ret = nftnl_set_desc_parse(s, tb[NFTA_SET_DESC]);
@@ -775,6 +804,7 @@ static int nftnl_set_snprintf_json(char *buf, size_t size, struct nftnl_set *s,
 				  uint32_t type, uint32_t flags)
 {
 	int len = size, offset = 0, ret;
+	int i;
 	struct nftnl_set_elem *elem;
 
 	ret = snprintf(buf, len, "{\"set\":{");
@@ -823,6 +853,26 @@ static int nftnl_set_snprintf_json(char *buf, size_t size, struct nftnl_set *s,
 	if (s->flags & (1 << NFTNL_SET_POLICY)) {
 		ret = snprintf(buf + offset, len, ",\"policy\":%u",
 			       s->policy);
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+	}
+
+	if (s->flags & (1 << NFTNL_SET_USERDATA)) {
+		ret = snprintf(buf + offset, len, ",\"userdata_len\":%u",
+			       s->user.len);
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+		ret = snprintf(buf + offset, len, ",\"userdata\":\"");
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+		char *c = s->user.data;
+
+		for (i = 0; i < s->user.len; i++) {
+			ret = snprintf(buf + offset, len, "%c",
+				       isprint(c[i]) ? c[i] : ' ');
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+		}
+
+		ret = snprintf(buf + offset, len, "\"");
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 	}
 
