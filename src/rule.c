@@ -28,6 +28,7 @@
 #include <libnftnl/rule.h>
 #include <libnftnl/set.h>
 #include <libnftnl/expr.h>
+#include <libnftnl/attr.h>
 
 struct nftnl_rule {
 	struct list_head head;
@@ -38,10 +39,7 @@ struct nftnl_rule {
 	const char	*chain;
 	uint64_t	handle;
 	uint64_t	position;
-	struct {
-			void		*data;
-			uint32_t	len;
-	} user;
+	struct nftnl_attrbuf	*userdata;
 	struct {
 			uint32_t	flags;
 			uint32_t	proto;
@@ -49,6 +47,14 @@ struct nftnl_rule {
 
 	struct list_head expr_list;
 };
+
+static void nftnl_rule_parse_userdata(const struct nftnl_attrbuf *attrbuf,
+				      const struct nftnl_attr *tb[]);
+static size_t nftnl_rule_snprintf_data2str(char *buf, size_t size,
+					   const void *data, size_t datalen);
+static size_t nftnl_rule_snprintf_userdata(char *buf, size_t size,
+					   const struct nftnl_attr *tb[],
+					   enum nftnl_attr_data_type dtype);
 
 struct nftnl_rule *nftnl_rule_alloc(void)
 {
@@ -75,6 +81,8 @@ void nftnl_rule_free(struct nftnl_rule *r)
 		xfree(r->table);
 	if (r->chain != NULL)
 		xfree(r->chain);
+	if (r->flags & (1 << NFTNL_RULE_USERDATA))
+		nftnl_attrbuf_free(r->userdata);
 
 	xfree(r);
 }
@@ -162,8 +170,11 @@ void nftnl_rule_set_data(struct nftnl_rule *r, uint16_t attr,
 		r->position = *((uint64_t *)data);
 		break;
 	case NFTNL_RULE_USERDATA:
-		r->user.data = (void *)data;
-		r->user.len = data_len;
+		if (!(r->userdata = nftnl_attrbuf_alloc(data_len))) {
+			perror("nftnl_rule_set_data - userdata");
+			exit(EXIT_FAILURE);
+		}
+		nftnl_attrbuf_copy_data(r->userdata, data, data_len);
 		break;
 	}
 	r->flags |= (1 << attr);
@@ -221,8 +232,8 @@ const void *nftnl_rule_get_data(const struct nftnl_rule *r, uint16_t attr,
 		*data_len = sizeof(uint64_t);
 		return &r->position;
 	case NFTNL_RULE_USERDATA:
-		*data_len = r->user.len;
-		return r->user.data;
+		*data_len = nftnl_attrbuf_get_len(r->userdata);
+		return (void *)nftnl_attrbuf_get_data(r->userdata);
 	}
 	return NULL;
 }
@@ -288,8 +299,9 @@ void nftnl_rule_nlmsg_build_payload(struct nlmsghdr *nlh, struct nftnl_rule *r)
 	if (r->flags & (1 << NFTNL_RULE_POSITION))
 		mnl_attr_put_u64(nlh, NFTA_RULE_POSITION, htobe64(r->position));
 	if (r->flags & (1 << NFTNL_RULE_USERDATA)) {
-		mnl_attr_put(nlh, NFTA_RULE_USERDATA, r->user.len,
-			     r->user.data);
+		mnl_attr_put(nlh, NFTA_RULE_USERDATA,
+			     nftnl_attrbuf_get_len(r->userdata),
+			     nftnl_attrbuf_get_data(r->userdata));
 	}
 
 	if (!list_empty(&r->expr_list)) {
@@ -447,19 +459,16 @@ int nftnl_rule_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_rule *r)
 		r->flags |= (1 << NFTNL_RULE_POSITION);
 	}
 	if (tb[NFTA_RULE_USERDATA]) {
+		uint16_t udata_size;
 		const void *udata =
 			mnl_attr_get_payload(tb[NFTA_RULE_USERDATA]);
 
-		if (r->user.data)
-			xfree(r->user.data);
+		udata_size = mnl_attr_get_payload_len(tb[NFTA_RULE_USERDATA]);
 
-		r->user.len = mnl_attr_get_payload_len(tb[NFTA_RULE_USERDATA]);
-
-		r->user.data = malloc(r->user.len);
-		if (r->user.data == NULL)
+		if (!(r->userdata = nftnl_attrbuf_alloc(udata_size)))
 			return -1;
+		nftnl_attrbuf_copy_data(r->userdata, udata, udata_size);
 
-		memcpy(r->user.data, udata, r->user.len);
 		r->flags |= (1 << NFTNL_RULE_USERDATA);
 	}
 
@@ -757,6 +766,29 @@ static int nftnl_rule_snprintf_json(char *buf, size_t size, struct nftnl_rule *r
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 	}
 
+	if (r->flags & (1 << NFTNL_RULE_USERDATA)) {
+		const struct nftnl_attr *tb[NFTNL_ATTR_TYPE_MAX+1] = {NULL};
+
+		nftnl_rule_parse_userdata(r->userdata, tb);
+
+		ret = snprintf(buf+offset, len, "\"userdata\":[");
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+		if (tb[NFTNL_ATTR_TYPE_COMMENT]) {
+			ret = snprintf(buf+offset, len, "{\"comment\":\"");
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+			ret = nftnl_rule_snprintf_userdata(buf+offset, size, tb,
+						NFTNL_ATTR_TYPE_COMMENT);
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+			ret = snprintf(buf+offset, len, "\"}");
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+		}
+
+		ret = snprintf(buf+offset, len, "],\n");
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+	}
+
 	ret = snprintf(buf+offset, len, "\"expr\":[");
 	SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 
@@ -855,11 +887,77 @@ static int nftnl_rule_snprintf_xml(char *buf, size_t size, struct nftnl_rule *r,
 	return offset;
 }
 
+static int nftnl_rule_parse_userdata_cb(const struct nftnl_attr *attr,
+				        void *data)
+{
+	const struct nftnl_attr **tb = data;
+	uint8_t type = nftnl_attr_get_type(attr);
+	uint8_t len = nftnl_attr_get_len(attr);
+	unsigned char *value = nftnl_attr_get_value(attr);
+
+	// Validation
+	switch (type) {
+	case NFTNL_ATTR_TYPE_COMMENT:
+		if (value[len-1] != '\0')
+			abi_breakage();
+		break;
+	default:
+		break;
+	};
+
+	tb[type] = attr;
+	return NFTNL_CB_OK;
+}
+
+static void nftnl_rule_parse_userdata(const struct nftnl_attrbuf *attrbuf,
+				      const struct nftnl_attr *tb[])
+{
+	if (nftnl_attr_parse(attrbuf, nftnl_rule_parse_userdata_cb, tb)
+		!= NFTNL_CB_OK
+	) {
+		fprintf(stderr, "Error parsing rule userdata\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+static size_t nftnl_rule_snprintf_data2str(char *buf, size_t size,
+					   const void *data, size_t datalen)
+{
+	int i;
+	size_t ret, len = size, offset = 0;
+	const char *c = data;
+
+	for (i = 0; i < datalen; i++) {
+		ret = snprintf(buf+offset, len, "%c",
+			       isprint(c[i]) ? c[i] : '?');
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+	}
+
+	return offset;
+}
+
+static size_t nftnl_rule_snprintf_userdata(char *buf, size_t size,
+					   const struct nftnl_attr *tb[],
+					   enum nftnl_attr_data_type dtype)
+{
+	size_t ret, offset = 0;
+
+	ret = nftnl_rule_snprintf_data2str(
+		buf,
+		size,
+		nftnl_attr_get_value(tb[dtype]),
+		nftnl_attr_get_len(tb[dtype])-1
+	);
+	SNPRINTF_BUFFER_SIZE(ret, size, size, offset);
+
+	return offset;
+}
+
 static int nftnl_rule_snprintf_default(char *buf, size_t size, struct nftnl_rule *r,
 				     uint32_t type, uint32_t flags)
 {
 	struct nftnl_expr *expr;
-	int ret, len = size, offset = 0, i;
+	int ret, len = size, offset = 0;
 
 	if (r->flags & (1 << NFTNL_RULE_FAMILY)) {
 		ret = snprintf(buf+offset, len, "%s ",
@@ -905,20 +1003,23 @@ static int nftnl_rule_snprintf_default(char *buf, size_t size, struct nftnl_rule
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 	}
 
-	if (r->user.len) {
-		ret = snprintf(buf+offset, len, "  userdata = { ");
-		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 
-		for (i = 0; i < r->user.len; i++) {
-			char *c = r->user.data;
+	if (r->flags & (1 << NFTNL_RULE_USERDATA)) {
+		const struct nftnl_attr *tb[NFTNL_ATTR_TYPE_MAX+1] = {NULL};
 
-			ret = snprintf(buf+offset, len, "%c",
-				       isalnum(c[i]) ? c[i] : 0);
+		nftnl_rule_parse_userdata(r->userdata, tb);
+
+		if (tb[NFTNL_ATTR_TYPE_COMMENT]) {
+			ret = snprintf(buf+offset, len, "  userdata = { ");
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+			ret = nftnl_rule_snprintf_userdata(buf+offset, size, tb,
+						NFTNL_ATTR_TYPE_COMMENT);
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+			ret = snprintf(buf+offset, len, " }\n");
 			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 		}
-
-		ret = snprintf(buf+offset, len, " }\n");
-		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 
 	}
 

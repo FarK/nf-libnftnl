@@ -12,4 +12,5 @@ noinst_HEADERS = internal.h	\
 		 expr.h		\
 		 json.h		\
 		 set_elem.h	\
+		 attr.h		\
 		 utils.h

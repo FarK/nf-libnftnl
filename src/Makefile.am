@@ -19,6 +19,7 @@ libnftnl_la_SOURCES = utils.c		\
 		      ruleset.c		\
 		      mxml.c		\
 		      jansson.c		\
+		      attr.c		\
 		      expr.c		\
 		      expr_ops.c	\
 		      expr/bitwise.c	\

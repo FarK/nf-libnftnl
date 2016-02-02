@@ -336,6 +336,24 @@ global:
   nftnl_set_snprintf;
   nftnl_set_fprintf;
 
+  nftnl_attrbuf_alloc;
+  nftnl_attrbuf_free;
+  nftnl_attrbuf_get_len;
+  nftnl_attrbuf_get_size;
+  nftnl_attrbuf_get_start;
+  nftnl_attrbuf_get_end;
+  nftnl_attrbuf_get_data;
+  nftnl_attrbuf_copy_data;
+  nftnl_attr_get_type;
+  nftnl_attr_get_len;
+  nftnl_attr_get_value;
+  nftnl_attr_get_size;
+  nftnl_attr_put;
+  nftnl_attr_put_check;
+  nftnl_attr_next;
+  nftnl_attr_payload_snprint;
+  nftnl_attr_parse;
+
   nftnl_set_list_alloc;
   nftnl_set_list_free;
   nftnl_set_list_add;
