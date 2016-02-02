@@ -27,9 +27,16 @@
 
 #include <libmnl/libmnl.h>
 #include <libnftnl/set.h>
+#include <libnftnl/attr.h>
+
+#define ATTRBUF_SIZE 256
+
+static bool parse_user_data(char *argv[], int argc,
+			    struct nftnl_attrbuf *attrbuf);
 
 static struct nftnl_set *setup_set(uint8_t family, const char *table,
-				 const char *name)
+				 const char *name, const char *udata,
+				 unsigned int udlen)
 {
 	struct nftnl_set *s = NULL;
 
@@ -44,6 +51,8 @@ static struct nftnl_set *setup_set(uint8_t family, const char *table,
 	nftnl_set_set_u32(s, NFTNL_SET_FAMILY, family);
 	nftnl_set_set_u32(s, NFTNL_SET_KEY_LEN, 2);
 	nftnl_set_set_u32(s, NFTNL_SET_ID, 1);
+	if (udata != NULL)
+		nftnl_set_set_data(s, NFTNL_SET_USERDATA, udata, udlen);
 	nftnl_set_set_u32(s, NFTNL_SET_FLAGS, NFT_SET_CONSTANT);
 
 	return s;
@@ -71,13 +80,17 @@ int main(int argc, char *argv[])
 	struct nftnl_set *s;
 	struct nlmsghdr *nlh;
 	struct mnl_nlmsg_batch *batch;
+	struct nftnl_attrbuf *attrbuf = NULL;
 	uint8_t family;
 	char buf[MNL_SOCKET_BUFFER_SIZE];
 	uint32_t seq = time(NULL);
 	int ret;
 
-	if (argc != 4) {
-		fprintf(stderr, "Usage: %s <family> <table> <setname>\n", argv[0]);
+	if (argc < 4) {
+		fprintf(stderr,
+			"Usage: %s <family> <table> <setname> [<type:user_data>[ <type:user_data>...]]\n",
+			argv[0]
+		);
 		exit(EXIT_FAILURE);
 	}
 
@@ -94,7 +107,21 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	s = setup_set(family, argv[2], argv[3]);
+	if (argc >= 5) {
+		attrbuf = nftnl_attrbuf_alloc(ATTRBUF_SIZE);
+		if (!parse_user_data(argv, argc, attrbuf)) {
+			fprintf(stderr, "Error parsing user data\n");
+			free(attrbuf);
+			return EXIT_FAILURE;
+		}
+
+		s = setup_set(family, argv[2], argv[3],
+			      (char *)nftnl_attrbuf_data(attrbuf),
+			      nftnl_attrbuf_len(attrbuf)
+			     );
+	} else {
+		s = setup_set(family, argv[2], argv[3], NULL, 0);
+	}
 
 	nl = mnl_socket_open(NETLINK_NETFILTER);
 	if (nl == NULL) {
@@ -147,6 +174,25 @@ int main(int argc, char *argv[])
 	}
 
 	mnl_socket_close(nl);
+	if (attrbuf)
+		free(attrbuf);
 
 	return EXIT_SUCCESS;
+}
+
+static bool parse_user_data(char *argv[], int argc,
+			    struct nftnl_attrbuf *attrbuf)
+{
+	int i;
+	char *type, *value;
+
+	for (i = 4; i < argc; i++) {
+		type = strchr(argv[i], ':') - 1;
+		value = type + 2;
+		if (!nftnl_attr_put_check(attrbuf, ATTRBUF_SIZE, atoi(type),
+					  strlen(value), value))
+			return false;
+	}
+
+	return true;
 }
