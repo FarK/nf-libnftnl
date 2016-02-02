@@ -19,7 +19,6 @@
 #include <netinet/in.h>
 #include <limits.h>
 #include <errno.h>
-#include <ctype.h>
 
 #include <libmnl/libmnl.h>
 #include <linux/netfilter/nfnetlink.h>
@@ -27,6 +26,7 @@
 
 #include <libnftnl/set.h>
 #include <libnftnl/expr.h>
+#include <libnftnl/attr.h>
 
 struct nftnl_set *nftnl_set_alloc(void)
 {
@@ -804,7 +804,6 @@ static int nftnl_set_snprintf_json(char *buf, size_t size, struct nftnl_set *s,
 				  uint32_t type, uint32_t flags)
 {
 	int len = size, offset = 0, ret;
-	int i;
 	struct nftnl_set_elem *elem;
 
 	ret = snprintf(buf, len, "{\"set\":{");
@@ -861,18 +860,14 @@ static int nftnl_set_snprintf_json(char *buf, size_t size, struct nftnl_set *s,
 			       s->user.len);
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 
-		ret = snprintf(buf + offset, len, ",\"userdata\":\"");
+		ret = snprintf(buf + offset, len, ",\"userdata\":[");
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 
-		char *c = s->user.data;
+		ret = nftnl_attr_payload_snprint(s->user.data, s->user.len,
+						 buf + offset, len);
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 
-		for (i = 0; i < s->user.len; i++) {
-			ret = snprintf(buf + offset, len, "%c",
-				       isprint(c[i]) ? c[i] : ' ');
-			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
-		}
-
-		ret = snprintf(buf + offset, len, "\"");
+		ret = snprintf(buf + offset, len, "]");
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 	}
 
