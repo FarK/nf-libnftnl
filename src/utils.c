@@ -139,6 +139,50 @@ int nftnl_strtoi(const char *string, int base, void *out, enum nftnl_type type)
 	return ret;
 }
 
+static int hex2char(char *out, char c)
+{
+	/* numbers */
+	if (c >= '0' && c <= '9')
+		*out = c - '0';
+	/* lowercase characters */
+	else if (c >= 'a' && c <= 'z')
+		*out = c - 'a' + 10;
+	/* uppercase characters */
+	else if (c >= 'A' && c <= 'Z')
+		*out = c - 'A' + 10;
+	else {
+		errno = EINVAL;
+		return 0;
+	}
+
+	return 1;
+}
+
+char *str2value(const char *str, size_t strlen)
+{
+	char *value;
+	size_t i;
+	char d0;
+	char d1;
+
+	value = malloc(strlen / 2);
+	if (!value)
+		return NULL;
+
+	for (i = 0; i < strlen / 2; i++) {
+		if (!hex2char(&d0, str[2 * i + 0]) ||
+		    !hex2char(&d1, str[2 * i + 1])
+		) {
+			free(value);
+			return NULL;
+		}
+
+		value[i] = d0 * 16 + d1;
+	}
+
+	return value;
+}
+
 const char *nftnl_verdict2str(uint32_t verdict)
 {
 	switch (verdict) {

@@ -4,6 +4,7 @@
 #ifdef XML_PARSING
 #include <mxml.h>
 #include "common.h"
+#include <libnftnl/udata.h>
 
 #define NFTNL_XML_MAND 0
 #define NFTNL_XML_OPT (1 << 0)
@@ -51,6 +52,11 @@ int nftnl_mxml_set_parse(mxml_node_t *tree, struct nftnl_set *s,
 
 int nftnl_data_reg_xml_parse(union nftnl_data_reg *reg, mxml_node_t *tree,
 			   struct nftnl_parse_err *err);
+
+struct nftnl_udata_buf *nftnl_mxml_udata_parse(mxml_node_t *rootn,
+					       uint32_t mxml_flags,
+					       uint16_t flags,
+					       struct nftnl_parse_err *err);
 #else
 #define mxml_node_t void
 #endif

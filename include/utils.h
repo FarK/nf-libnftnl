@@ -69,6 +69,8 @@ enum nftnl_type {
 int nftnl_strtoi(const char *string, int base, void *number, enum nftnl_type type);
 int nftnl_get_value(enum nftnl_type type, void *val, void *out);
 
+char *str2value(const char *str, size_t strlen);
+
 const char *nftnl_verdict2str(uint32_t verdict);
 int nftnl_str2verdict(const char *verdict, int *verdict_num);
 

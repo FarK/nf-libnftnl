@@ -3,6 +3,7 @@
 
 #ifdef JSON_PARSING
 #include <jansson.h>
+#include <libnftnl/udata.h>
 #include <stdbool.h>
 #include "common.h"
 
@@ -51,6 +52,12 @@ int nftnl_jansson_parse_elem(struct nftnl_set *s, json_t *tree,
 
 int nftnl_data_reg_json_parse(union nftnl_data_reg *reg, json_t *data,
 			    struct nftnl_parse_err *err);
+
+struct nftnl_udata_buf *nftnl_jansson_udata_parse(json_t *attr_array,
+						  json_t *root,
+						  struct nftnl_parse_err *err,
+						  struct nftnl_set_list *set_list);
+
 #else
 #define json_t void
 #endif

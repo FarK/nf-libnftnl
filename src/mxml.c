@@ -20,6 +20,7 @@
 #include <libnftnl/rule.h>
 #include <libnftnl/expr.h>
 #include <libnftnl/set.h>
+#include <libnftnl/udata.h>
 
 #ifdef XML_PARSING
 mxml_node_t *nftnl_mxml_build_tree(const void *data, const char *treename,
@@ -229,4 +230,75 @@ int nftnl_mxml_family_parse(mxml_node_t *tree, const char *node_name,
 
 	return family;
 }
+
+static int nftnl_mxml_udata_attr_parse(struct nftnl_udata_buf *buf,
+				       mxml_node_t *tree,
+				       uint32_t mxml_flags, uint16_t flags,
+				       struct nftnl_parse_err *err)
+{
+	uint8_t len;
+	uint8_t type;
+	const char *value_str;
+	char *value = NULL;
+
+	if (nftnl_mxml_num_parse(tree, "type", mxml_flags, BASE_DEC, &type,
+				 NFTNL_TYPE_U8, flags, err) < 0)
+		return 0;
+
+	if (nftnl_mxml_num_parse(tree, "length", mxml_flags, BASE_DEC, &len,
+				 NFTNL_TYPE_U8, flags, err) < 0)
+		return 0;
+
+	value_str = nftnl_mxml_str_parse(tree, "value", mxml_flags, flags, err);
+	if (!value_str)
+		return 0;
+
+	if (strlen(value_str) != 2 * len)
+		return 0;
+
+	value = str2value(value_str, 2 * len);
+	if (!value) {
+		err->error = NFTNL_PARSE_EBADTYPE;
+		err->node_name = "value";
+		errno = ERANGE;
+		return 0;
+	}
+
+	if (!nftnl_udata_put(buf, type, len, (void *)value))
+		return 0;
+
+	free(value);
+	return 1;
+}
+
+struct nftnl_udata_buf *nftnl_mxml_udata_parse(mxml_node_t *rootn,
+					       uint32_t mxml_flags,
+					       uint16_t flags,
+					       struct nftnl_parse_err *err)
+{
+		mxml_node_t *attrn;
+		struct nftnl_udata_buf *buf;
+
+		buf = nftnl_udata_buf_alloc(NFT_USERDATA_MAXLEN);
+		if (!buf) {
+			free(buf);
+			return NULL;
+		}
+
+		/* Iterate over attributes */
+		for (
+			attrn = mxmlFindElement(rootn, rootn, "attr", NULL,
+						NULL, mxml_flags);
+			attrn;
+			attrn = mxmlFindElement(attrn, rootn, "attr", NULL,
+						NULL, mxml_flags)
+		) {
+			if (!nftnl_mxml_udata_attr_parse(buf, attrn, mxml_flags,
+							 flags, err))
+				return NULL;
+		}
+
+	return buf;
+}
+
 #endif

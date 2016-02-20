@@ -19,6 +19,7 @@
 #include <libnftnl/set.h>
 
 #include <libnftnl/expr.h>
+#include <libnftnl/udata.h>
 #include <linux/netfilter/nf_tables.h>
 
 #ifdef JSON_PARSING
@@ -276,4 +277,69 @@ int nftnl_jansson_set_elem_parse(struct nftnl_set_elem *e, json_t *root,
 
 	return 0;
 }
+
+static int nftnl_jansson_udata_attr_parse(struct nftnl_udata_buf *buf,
+					  json_t *root,
+					  struct nftnl_parse_err *err,
+					  struct nftnl_set_list *set_list)
+{
+	const char *value_str;
+	char *value = NULL;
+	uint8_t type;
+	uint8_t len;
+	int ret;
+
+	ret = nftnl_jansson_parse_val(root, "type", NFTNL_TYPE_U8, &type, err);
+	if (ret != 0)
+		return 0;
+
+	ret = nftnl_jansson_parse_val(root, "length", NFTNL_TYPE_U8, &len, err);
+	if (ret != 0)
+		return 0;
+
+	value_str = nftnl_jansson_parse_str(root, "value", err);
+	if (ret != 0)
+		return 0;
+
+	if (strlen(value_str) != 2 * len)
+		return 0;
+
+	value = str2value(value_str, 2 * len);
+	if (!value) {
+		err->error = NFTNL_PARSE_EBADTYPE;
+		err->node_name = "value";
+		errno = ERANGE;
+		return 0;
+	}
+
+	if (!nftnl_udata_put(buf, type, len, (void *)value))
+		ret = 0;
+
+	free(value);
+	return 1;
+}
+
+struct nftnl_udata_buf *nftnl_jansson_udata_parse(json_t *attr_array,
+						  json_t *root,
+						  struct nftnl_parse_err *err,
+						  struct nftnl_set_list *set_list)
+{
+	struct nftnl_udata_buf *buf = NULL;
+	json_t *jattr;
+	int i;
+
+	buf = nftnl_udata_buf_alloc(NFT_USERDATA_MAXLEN);
+	if (!buf) {
+		free(buf);
+		return NULL;
+	}
+
+	for (i = 0; (jattr = json_array_get(attr_array, i)); ++i) {
+		if (!nftnl_jansson_udata_attr_parse(buf, jattr, err, set_list))
+			return NULL;
+	}
+
+	return buf;
+}
+
 #endif
