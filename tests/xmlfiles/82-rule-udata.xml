@@ -1,0 +1,1 @@
+<nftables><add><rule><family>ip6</family><table>filter</table><chain>input</chain><handle>82</handle><expr type="counter"><pkts>3</pkts><bytes>177</bytes></expr><userdata><attr><type>0</type><length>12</length><value>68656C6C6F20776F726C6400</value></attr><attr><type>1</type><length>9</length><value>627920776F726C6400</value></attr></userdata></rule></add></nftables>
