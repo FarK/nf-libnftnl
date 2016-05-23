@@ -19,13 +19,13 @@
 #include <netinet/in.h>
 #include <limits.h>
 #include <errno.h>
-
 #include <libmnl/libmnl.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nf_tables.h>
 
 #include <libnftnl/set.h>
 #include <libnftnl/expr.h>
+#include <libnftnl/udata.h>
 
 struct nftnl_set *nftnl_set_alloc(void)
 {
@@ -91,6 +91,7 @@ void nftnl_set_unset(struct nftnl_set *s, uint16_t attr)
 	case NFTNL_SET_DESC_SIZE:
 	case NFTNL_SET_TIMEOUT:
 	case NFTNL_SET_GC_INTERVAL:
+	case NFTNL_SET_USERDATA:
 		break;
 	default:
 		return;
@@ -167,6 +168,16 @@ void nftnl_set_set_data(struct nftnl_set *s, uint16_t attr, const void *data,
 	case NFTNL_SET_GC_INTERVAL:
 		s->gc_interval = *((uint32_t *)data);
 		break;
+	case NFTNL_SET_USERDATA:
+		if (s->flags & (1 << NFTNL_SET_USERDATA))
+			nftnl_udata_buf_free(s->userdata);
+		s->userdata = nftnl_udata_buf_alloc(data_len);
+		if (!s->userdata) {
+			perror("libnftnl: " __FILE__);
+			return;
+		}
+		nftnl_udata_buf_put(s->userdata, data, data_len);
+		break;
 	}
 	s->flags |= (1 << attr);
 }
@@ -240,6 +251,9 @@ const void *nftnl_set_get_data(const struct nftnl_set *s, uint16_t attr,
 	case NFTNL_SET_GC_INTERVAL:
 		*data_len = sizeof(uint32_t);
 		return &s->gc_interval;
+	case NFTNL_SET_USERDATA:
+		*data_len = nftnl_udata_buf_len(s->userdata);
+		return nftnl_udata_buf_data(s->userdata);
 	}
 	return NULL;
 }
@@ -348,6 +362,10 @@ void nftnl_set_nlmsg_build_payload(struct nlmsghdr *nlh, struct nftnl_set *s)
 		mnl_attr_put_u64(nlh, NFTA_SET_TIMEOUT, htobe64(s->timeout));
 	if (s->flags & (1 << NFTNL_SET_GC_INTERVAL))
 		mnl_attr_put_u32(nlh, NFTA_SET_GC_INTERVAL, htonl(s->gc_interval));
+	if (s->flags & (1 << NFTNL_SET_USERDATA))
+		mnl_attr_put(nlh, NFTA_SET_USERDATA,
+			     nftnl_udata_buf_len(s->userdata),
+			     nftnl_udata_buf_data(s->userdata));
 }
 EXPORT_SYMBOL_ALIAS(nftnl_set_nlmsg_build_payload, nft_set_nlmsg_build_payload);
 
@@ -374,6 +392,10 @@ static int nftnl_set_parse_attr_cb(const struct nlattr *attr, void *data)
 	case NFTA_SET_POLICY:
 	case NFTA_SET_GC_INTERVAL:
 		if (mnl_attr_validate(attr, MNL_TYPE_U32) < 0)
+			abi_breakage();
+		break;
+	case NFTA_SET_USERDATA:
+		if (mnl_attr_validate(attr, MNL_TYPE_BINARY) < 0)
 			abi_breakage();
 		break;
 	case NFTA_SET_TIMEOUT:
@@ -479,6 +501,22 @@ int nftnl_set_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_set *s)
 	if (tb[NFTA_SET_GC_INTERVAL]) {
 		s->gc_interval = ntohl(mnl_attr_get_u32(tb[NFTA_SET_GC_INTERVAL]));
 		s->flags |= (1 << NFTNL_SET_GC_INTERVAL);
+	}
+	if (tb[NFTA_SET_USERDATA]) {
+		const void *udata;
+		uint16_t udata_size;
+
+		udata = mnl_attr_get_payload(tb[NFTA_SET_USERDATA]);
+		udata_size = mnl_attr_get_payload_len(tb[NFTA_SET_USERDATA]);
+
+		if (s->flags & (1 << NFTNL_SET_USERDATA))
+			nftnl_udata_buf_free(s->userdata);
+		s->userdata = nftnl_udata_buf_alloc(udata_size);
+		if (!s->userdata)
+			return -1;
+		nftnl_udata_buf_put(s->userdata, udata, udata_size);
+
+		s->flags |= (1 << NFTNL_SET_USERDATA);
 	}
 	if (tb[NFTA_SET_DESC])
 		ret = nftnl_set_desc_parse(s, tb[NFTA_SET_DESC]);
