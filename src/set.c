@@ -901,6 +901,44 @@ static int nftnl_set_snprintf_json(char *buf, size_t size,
 	return offset;
 }
 
+static size_t nftnl_rule_snprintf_data2str(char *buf, size_t size,
+					   const void *data, size_t datalen)
+{
+	int i;
+	size_t ret, len = size, offset = 0;
+	const unsigned char *str = data;
+
+	for (i = 0; i < datalen; i++) {
+		ret = snprintf(buf + offset, len, "%02X", str[i]);
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+	}
+
+	return offset;
+}
+
+static size_t nftnl_rule_snprintf_default_udata(char *buf, size_t size,
+						const struct nftnl_udata *attr)
+{
+	size_t ret, len = size, offset = 0;
+
+	uint8_t atype = nftnl_udata_type(attr);
+	uint8_t alen  = nftnl_udata_len(attr);
+	void   *aval  = nftnl_udata_get(attr);
+
+	/* type */
+	ret = snprintf(buf + offset, len, "{%d:\"", atype);
+	SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+	/* value */
+	ret = nftnl_rule_snprintf_data2str(buf + offset, len, aval, alen);
+	SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+	ret = snprintf(buf + offset, len, "\"}");
+	SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+	return offset;
+}
+
 static int nftnl_set_snprintf_default(char *buf, size_t size,
 				      const struct nftnl_set *s,
 				      uint32_t type, uint32_t flags)
@@ -932,6 +970,30 @@ static int nftnl_set_snprintf_default(char *buf, size_t size,
 
 	if (s->flags & (1 << NFTNL_SET_DESC_SIZE)) {
 		ret = snprintf(buf + offset, len, " size %u", s->desc.size);
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+	}
+
+	if (s->flags & (1 << NFTNL_SET_USERDATA)) {
+		const struct nftnl_udata *attr;
+
+		ret = snprintf(buf + offset, len, "  userdata = { ");
+		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+		nftnl_udata_for_each(s->userdata, attr) {
+			ret = nftnl_rule_snprintf_default_udata(buf + offset,
+								len, attr);
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+
+			ret = snprintf(buf + offset, len, ",");
+			SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
+		}
+		/* delete last comma */
+		buf[offset - 1] = '\0';
+		offset--;
+		size--;
+		len++;
+
+		ret = snprintf(buf+offset, len, " }\n");
 		SNPRINTF_BUFFER_SIZE(ret, size, len, offset);
 	}
 
