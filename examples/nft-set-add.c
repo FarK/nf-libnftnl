@@ -27,9 +27,16 @@
 
 #include <libmnl/libmnl.h>
 #include <libnftnl/set.h>
+#include <libnftnl/udata.h>
+
+#define ATTRBUF_SIZE 256
+
+static bool parse_user_data(char *argv[], int argc,
+			    struct nftnl_udata_buf *udbuf);
 
 static struct nftnl_set *setup_set(uint8_t family, const char *table,
-				 const char *name)
+				   const char *name,
+				   const struct nftnl_udata_buf *udbuf)
 {
 	struct nftnl_set *s = NULL;
 
@@ -44,6 +51,11 @@ static struct nftnl_set *setup_set(uint8_t family, const char *table,
 	nftnl_set_set_u32(s, NFTNL_SET_FAMILY, family);
 	nftnl_set_set_u32(s, NFTNL_SET_KEY_LEN, 2);
 	nftnl_set_set_u32(s, NFTNL_SET_ID, 1);
+	if (udbuf != NULL) {
+		nftnl_set_set_data(s, NFTNL_SET_USERDATA,
+				   nftnl_udata_buf_data(udbuf),
+				   nftnl_udata_buf_len(udbuf));
+	}
 	nftnl_set_set_u32(s, NFTNL_SET_FLAGS, NFT_SET_CONSTANT);
 
 	return s;
@@ -71,13 +83,17 @@ int main(int argc, char *argv[])
 	struct nftnl_set *s;
 	struct nlmsghdr *nlh;
 	struct mnl_nlmsg_batch *batch;
+	struct nftnl_udata_buf *udata = NULL;
 	uint8_t family;
 	char buf[MNL_SOCKET_BUFFER_SIZE];
 	uint32_t seq = time(NULL);
 	int ret;
 
-	if (argc != 4) {
-		fprintf(stderr, "Usage: %s <family> <table> <setname>\n", argv[0]);
+	if (argc < 4) {
+		fprintf(stderr,
+			"Usage: %s <family> <table> <setname> [<type:user_data> [<type:user_data>...]\n",
+			argv[0]
+		);
 		exit(EXIT_FAILURE);
 	}
 
@@ -94,7 +110,21 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 
-	s = setup_set(family, argv[2], argv[3]);
+	if (argc >= 5) {
+		udata = nftnl_udata_buf_alloc(ATTRBUF_SIZE);
+		if (!udata) {
+			perror("OOM");
+			exit(EXIT_FAILURE);
+		}
+
+		if (!parse_user_data(argv, argc, udata)) {
+			fprintf(stderr, "Error parsing user data\n");
+			free(udata);
+			return EXIT_FAILURE;
+		}
+	}
+
+	s = setup_set(family, argv[2], argv[3], udata);
 
 	nl = mnl_socket_open(NETLINK_NETFILTER);
 	if (nl == NULL) {
@@ -147,6 +177,24 @@ int main(int argc, char *argv[])
 	}
 
 	mnl_socket_close(nl);
+	if (udata)
+		free(udata);
 
 	return EXIT_SUCCESS;
+}
+
+static bool parse_user_data(char *argv[], int argc,
+			    struct nftnl_udata_buf *udbuf)
+{
+	int i;
+	char *type, *value;
+
+	for (i = 4; i < argc; i++) {
+		type = strchr(argv[i], ':') - 1;
+		value = type + 2;
+		if (!nftnl_udata_put_strz(udbuf, atoi(type), value))
+			return false;
+	}
+
+	return true;
 }
