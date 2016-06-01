@@ -410,16 +410,12 @@ static int nftnl_rule_parse_compat(struct nlattr *nest, struct nftnl_rule *r)
 	if (mnl_attr_parse_nested(nest, nftnl_rule_parse_compat_cb, tb) < 0)
 		return -1;
 
-	if (tb[NFTA_RULE_COMPAT_PROTO]) {
-		r->compat.proto =
-			ntohl(mnl_attr_get_u32(tb[NFTA_RULE_COMPAT_PROTO]));
-		r->flags |= (1 << NFTNL_RULE_COMPAT_PROTO);
-	}
-	if (tb[NFTA_RULE_COMPAT_FLAGS]) {
-		r->compat.flags =
-			ntohl(mnl_attr_get_u32(tb[NFTA_RULE_COMPAT_FLAGS]));
-		r->flags |= (1 << NFTNL_RULE_COMPAT_FLAGS);
-	}
+	if (tb[NFTA_RULE_COMPAT_PROTO])
+		nftnl_rule_set_u32(r, NFTNL_RULE_COMPAT_PROTO,
+			ntohl(mnl_attr_get_u32(tb[NFTA_RULE_COMPAT_PROTO])));
+	if (tb[NFTA_RULE_COMPAT_FLAGS])
+		nftnl_rule_set_u32(r, NFTNL_RULE_COMPAT_FLAGS,
+			ntohl(mnl_attr_get_u32(tb[NFTA_RULE_COMPAT_FLAGS])));
 	return 0;
 }
 
@@ -433,25 +429,20 @@ int nftnl_rule_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_rule *r)
 		return -1;
 
 	if (tb[NFTA_RULE_TABLE]) {
-		if (r->flags & (1 << NFTNL_RULE_TABLE))
-			xfree(r->table);
-		r->table = strdup(mnl_attr_get_str(tb[NFTA_RULE_TABLE]));
-		if (!r->table)
-			return -1;
-		r->flags |= (1 << NFTNL_RULE_TABLE);
+		ret = nftnl_rule_set_str(r, NFTNL_RULE_TABLE,
+				mnl_attr_get_str(tb[NFTA_RULE_TABLE]));
+		if (ret)
+			return ret;
 	}
 	if (tb[NFTA_RULE_CHAIN]) {
-		if (r->flags & (1 << NFTNL_RULE_CHAIN))
-			xfree(r->chain);
-		r->chain = strdup(mnl_attr_get_str(tb[NFTA_RULE_CHAIN]));
-		if (!r->chain)
-			return -1;
-		r->flags |= (1 << NFTNL_RULE_CHAIN);
+		ret = nftnl_rule_set_str(r, NFTNL_RULE_CHAIN,
+			mnl_attr_get_str(tb[NFTA_RULE_CHAIN]));
+		if (ret)
+			return ret;
 	}
-	if (tb[NFTA_RULE_HANDLE]) {
-		r->handle = be64toh(mnl_attr_get_u64(tb[NFTA_RULE_HANDLE]));
-		r->flags |= (1 << NFTNL_RULE_HANDLE);
-	}
+	if (tb[NFTA_RULE_HANDLE])
+		nftnl_rule_set_u64(r, NFTNL_RULE_HANDLE,
+			be64toh(mnl_attr_get_u64(tb[NFTA_RULE_HANDLE])));
 	if (tb[NFTA_RULE_EXPRESSIONS]) {
 		ret = nftnl_rule_parse_expr(tb[NFTA_RULE_EXPRESSIONS], r);
 		if (ret < 0)
@@ -462,29 +453,18 @@ int nftnl_rule_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_rule *r)
 		if (ret < 0)
 			return ret;
 	}
-	if (tb[NFTA_RULE_POSITION]) {
-		r->position = be64toh(mnl_attr_get_u64(tb[NFTA_RULE_POSITION]));
-		r->flags |= (1 << NFTNL_RULE_POSITION);
-	}
+	if (tb[NFTA_RULE_POSITION])
+		nftnl_rule_set_u64(r, NFTNL_RULE_POSITION,
+			be64toh(mnl_attr_get_u64(tb[NFTA_RULE_POSITION])));
 	if (tb[NFTA_RULE_USERDATA]) {
-		const void *udata =
-			mnl_attr_get_payload(tb[NFTA_RULE_USERDATA]);
-
-		if (r->flags & (1 << NFTNL_RULE_USERDATA))
-			xfree(r->user.data);
-
-		r->user.len = mnl_attr_get_payload_len(tb[NFTA_RULE_USERDATA]);
-
-		r->user.data = malloc(r->user.len);
-		if (r->user.data == NULL)
-			return -1;
-
-		memcpy(r->user.data, udata, r->user.len);
-		r->flags |= (1 << NFTNL_RULE_USERDATA);
+		nftnl_rule_set_data(r, NFTNL_RULE_USERDATA,
+			mnl_attr_get_payload(tb[NFTA_RULE_USERDATA]),
+			mnl_attr_get_payload_len(tb[NFTA_RULE_USERDATA]));
+		if (ret)
+			return ret;
 	}
 
-	r->family = nfg->nfgen_family;
-	r->flags |= (1 << NFTNL_RULE_FAMILY);
+	nftnl_rule_set_u32(r, NFTNL_RULE_FAMILY, nfg->nfgen_family);
 
 	return 0;
 }

@@ -222,29 +222,25 @@ int nftnl_table_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_table *t)
 {
 	struct nlattr *tb[NFTA_TABLE_MAX+1] = {};
 	struct nfgenmsg *nfg = mnl_nlmsg_get_payload(nlh);
+	int err;
 
 	if (mnl_attr_parse(nlh, sizeof(*nfg), nftnl_table_parse_attr_cb, tb) < 0)
 		return -1;
 
 	if (tb[NFTA_TABLE_NAME]) {
-		if (t->flags & (1 << NFTNL_TABLE_NAME))
-			xfree(t->name);
-		t->name = strdup(mnl_attr_get_str(tb[NFTA_TABLE_NAME]));
-		if (!t->name)
-			return -1;
-		t->flags |= (1 << NFTNL_TABLE_NAME);
+		err = nftnl_table_set_str(t, NFTNL_TABLE_NAME,
+			mnl_attr_get_str(tb[NFTA_TABLE_NAME]));
+		if (err)
+			return err;
 	}
-	if (tb[NFTA_TABLE_FLAGS]) {
-		t->table_flags = ntohl(mnl_attr_get_u32(tb[NFTA_TABLE_FLAGS]));
-		t->flags |= (1 << NFTNL_TABLE_FLAGS);
-	}
-	if (tb[NFTA_TABLE_USE]) {
-		t->use = ntohl(mnl_attr_get_u32(tb[NFTA_TABLE_USE]));
-		t->flags |= (1 << NFTNL_TABLE_USE);
-	}
+	if (tb[NFTA_TABLE_FLAGS])
+		nftnl_table_set_u32(t, NFTNL_TABLE_FLAGS,
+			ntohl(mnl_attr_get_u32(tb[NFTA_TABLE_FLAGS])));
+	if (tb[NFTA_TABLE_USE])
+		nftnl_table_set_u32(t, NFTNL_TABLE_USE,
+			ntohl(mnl_attr_get_u32(tb[NFTA_TABLE_USE])));
 
-	t->family = nfg->nfgen_family;
-	t->flags |= (1 << NFTNL_TABLE_FAMILY);
+	nftnl_table_set_u32(t, NFTNL_TABLE_FAMILY, nfg->nfgen_family);
 
 	return 0;
 }

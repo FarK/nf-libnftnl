@@ -119,6 +119,9 @@ int nftnl_set_elem_set(struct nftnl_set_elem *s, uint16_t attr,
 	case NFTNL_SET_ELEM_TIMEOUT:	/* NFTA_SET_ELEM_TIMEOUT */
 		s->timeout = *((uint64_t *)data);
 		break;
+	case NFTNL_SET_ELEM_EXPIRATION:	/* NFTA_SET_ELEM_EXPIRATION */
+		s->expiration = *((uint64_t *)data);
+		break;
 	case NFTNL_SET_ELEM_USERDATA: /* NFTA_SET_ELEM_USERDATA */
 		if (s->flags & (1 << NFTNL_SET_ELEM_USERDATA))
 			xfree(s->user.data);
@@ -355,19 +358,15 @@ static int nftnl_set_elems_parse2(struct nftnl_set *s, const struct nlattr *nest
 	if (ret < 0)
 		goto out_set_elem;
 
-	if (tb[NFTA_SET_ELEM_FLAGS]) {
-		e->set_elem_flags =
-			ntohl(mnl_attr_get_u32(tb[NFTA_SET_ELEM_FLAGS]));
-		e->flags |= (1 << NFTNL_SET_ELEM_FLAGS);
-	}
-	if (tb[NFTA_SET_ELEM_TIMEOUT]) {
-		e->timeout = be64toh(mnl_attr_get_u64(tb[NFTA_SET_ELEM_TIMEOUT]));
-		e->flags |= (1 << NFTNL_SET_ELEM_TIMEOUT);
-	}
-	if (tb[NFTA_SET_ELEM_EXPIRATION]) {
-		e->expiration = be64toh(mnl_attr_get_u64(tb[NFTA_SET_ELEM_EXPIRATION]));
-		e->flags |= (1 << NFTNL_SET_ELEM_EXPIRATION);
-	}
+	if (tb[NFTA_SET_ELEM_FLAGS])
+		nftnl_set_elem_set_u32(e, NFTNL_SET_ELEM_FLAGS,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_ELEM_FLAGS])));
+	if (tb[NFTA_SET_ELEM_TIMEOUT])
+		nftnl_set_elem_set_u64(e, NFTNL_SET_ELEM_TIMEOUT,
+			be64toh(mnl_attr_get_u64(tb[NFTA_SET_ELEM_TIMEOUT])));
+	if (tb[NFTA_SET_ELEM_EXPIRATION])
+		nftnl_set_elem_set_u64(e, NFTNL_SET_ELEM_EXPIRATION,
+			be64toh(mnl_attr_get_u64(tb[NFTA_SET_ELEM_EXPIRATION])));
         if (tb[NFTA_SET_ELEM_KEY]) {
 		ret = nftnl_parse_data(&e->key, tb[NFTA_SET_ELEM_KEY], &type);
 		if (ret < 0)
@@ -398,18 +397,11 @@ static int nftnl_set_elems_parse2(struct nftnl_set *s, const struct nlattr *nest
 		e->flags |= (1 << NFTNL_SET_ELEM_EXPR);
 	}
 	if (tb[NFTA_SET_ELEM_USERDATA]) {
-		const void *udata =
-			mnl_attr_get_payload(tb[NFTA_SET_ELEM_USERDATA]);
-
-		if (e->flags & (1 << NFTNL_RULE_USERDATA))
-			xfree(e->user.data);
-
-		e->user.len  = mnl_attr_get_payload_len(tb[NFTA_SET_ELEM_USERDATA]);
-		e->user.data = malloc(e->user.len);
-		if (e->user.data == NULL)
+		ret = nftnl_set_elem_set(e, NFTNL_SET_ELEM_USERDATA,
+			mnl_attr_get_payload(tb[NFTA_SET_ELEM_USERDATA]),
+			mnl_attr_get_payload_len(tb[NFTA_SET_ELEM_USERDATA]));
+		if (ret)
 			goto out_expr;
-		memcpy(e->user.data, udata, e->user.len);
-		e->flags |= (1 << NFTNL_RULE_USERDATA);
 	}
 
 	/* Add this new element to this set */
@@ -475,35 +467,27 @@ int nftnl_set_elems_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_set *s)
 		return -1;
 
 	if (tb[NFTA_SET_ELEM_LIST_TABLE]) {
-		if (s->flags & (1 << NFTNL_SET_TABLE))
-			xfree(s->table);
-		s->table =
-			strdup(mnl_attr_get_str(tb[NFTA_SET_ELEM_LIST_TABLE]));
-		if (!s->table)
-			return -1;
-		s->flags |= (1 << NFTNL_SET_TABLE);
+		ret = nftnl_set_set_str(s, NFTNL_SET_TABLE,
+			mnl_attr_get_str(tb[NFTA_SET_ELEM_LIST_TABLE]));
+		if (ret)
+			return ret;
 	}
 	if (tb[NFTA_SET_ELEM_LIST_SET]) {
-		if (s->flags & (1 << NFTNL_SET_NAME))
-			xfree(s->name);
-		s->name =
-			strdup(mnl_attr_get_str(tb[NFTA_SET_ELEM_LIST_SET]));
-		if (!s->name)
-			return -1;
-		s->flags |= (1 << NFTNL_SET_NAME);
+		ret = nftnl_set_set_str(s, NFTNL_SET_NAME,
+			mnl_attr_get_str(tb[NFTA_SET_ELEM_LIST_SET]));
+		if (ret)
+			return ret;
 	}
-	if (tb[NFTA_SET_ELEM_LIST_SET_ID]) {
-		s->id = ntohl(mnl_attr_get_u32(tb[NFTA_SET_ELEM_LIST_SET_ID]));
-		s->flags |= (1 << NFTNL_SET_ID);
-	}
+	if (tb[NFTA_SET_ELEM_LIST_SET_ID])
+		nftnl_set_set_u32(s, NFTNL_SET_ID,
+			mnl_attr_get_u32(tb[NFTA_SET_ELEM_LIST_SET_ID]));
         if (tb[NFTA_SET_ELEM_LIST_ELEMENTS]) {
 	 	ret = nftnl_set_elems_parse(s, tb[NFTA_SET_ELEM_LIST_ELEMENTS]);
 		if (ret < 0)
 			return ret;
 	}
 
-	s->family = nfg->nfgen_family;
-	s->flags |= (1 << NFTNL_SET_FAMILY);
+	nftnl_set_set_u32(s, NFTNL_SET_FAMILY, nfg->nfgen_family);
 
 	return 0;
 }

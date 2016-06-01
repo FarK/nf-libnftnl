@@ -147,10 +147,9 @@ int nftnl_gen_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_gen *gen)
 	if (mnl_attr_parse(nlh, sizeof(*nfg), nftnl_gen_parse_attr_cb, tb) < 0)
 		return -1;
 
-	if (tb[NFTA_GEN_ID]) {
-		gen->id = ntohl(mnl_attr_get_u32(tb[NFTA_GEN_ID]));
-		gen->flags |= (1 << NFTNL_GEN_ID);
-	}
+	if (tb[NFTA_GEN_ID])
+		nftnl_gen_set_u32(gen, NFTNL_GEN_ID,
+				ntohl(mnl_attr_get_u32(tb[NFTA_GEN_ID])));
 	return 0;
 }
 EXPORT_SYMBOL_ALIAS(nftnl_gen_nlmsg_parse, nft_gen_nlmsg_parse);

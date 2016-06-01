@@ -465,14 +465,12 @@ static int nftnl_chain_parse_counters(struct nlattr *attr, struct nftnl_chain *c
 	if (mnl_attr_parse_nested(attr, nftnl_chain_parse_counters_cb, tb) < 0)
 		return -1;
 
-	if (tb[NFTA_COUNTER_PACKETS]) {
-		c->packets = be64toh(mnl_attr_get_u64(tb[NFTA_COUNTER_PACKETS]));
-		c->flags |= (1 << NFTNL_CHAIN_PACKETS);
-	}
-	if (tb[NFTA_COUNTER_BYTES]) {
-		c->bytes = be64toh(mnl_attr_get_u64(tb[NFTA_COUNTER_BYTES]));
-		c->flags |= (1 << NFTNL_CHAIN_BYTES);
-	}
+	if (tb[NFTA_COUNTER_PACKETS])
+		nftnl_chain_set_u64(c, NFTNL_CHAIN_PACKETS,
+			be64toh(mnl_attr_get_u64(tb[NFTA_COUNTER_PACKETS])));
+	if (tb[NFTA_COUNTER_BYTES])
+		nftnl_chain_set_u64(c, NFTNL_CHAIN_BYTES,
+			be64toh(mnl_attr_get_u64(tb[NFTA_COUNTER_BYTES])));
 
 	return 0;
 }
@@ -504,23 +502,22 @@ static int nftnl_chain_parse_hook_cb(const struct nlattr *attr, void *data)
 static int nftnl_chain_parse_hook(struct nlattr *attr, struct nftnl_chain *c)
 {
 	struct nlattr *tb[NFTA_HOOK_MAX+1] = {};
+	int err;
 
 	if (mnl_attr_parse_nested(attr, nftnl_chain_parse_hook_cb, tb) < 0)
 		return -1;
 
-	if (tb[NFTA_HOOK_HOOKNUM]) {
-		c->hooknum = ntohl(mnl_attr_get_u32(tb[NFTA_HOOK_HOOKNUM]));
-		c->flags |= (1 << NFTNL_CHAIN_HOOKNUM);
-	}
-	if (tb[NFTA_HOOK_PRIORITY]) {
-		c->prio = ntohl(mnl_attr_get_u32(tb[NFTA_HOOK_PRIORITY]));
-		c->flags |= (1 << NFTNL_CHAIN_PRIO);
-	}
+	if (tb[NFTA_HOOK_HOOKNUM])
+		nftnl_chain_set_u32(c, NFTNL_CHAIN_HOOKNUM,
+			ntohl(mnl_attr_get_u32(tb[NFTA_HOOK_HOOKNUM])));
+	if (tb[NFTA_HOOK_PRIORITY])
+		nftnl_chain_set_s32(c, NFTNL_CHAIN_PRIO,
+			ntohl(mnl_attr_get_u32(tb[NFTA_HOOK_PRIORITY])));
 	if (tb[NFTA_HOOK_DEV]) {
-		c->dev = strdup(mnl_attr_get_str(tb[NFTA_HOOK_DEV]));
-		if (!c->dev)
-			return -1;
-		c->flags |= (1 << NFTNL_CHAIN_DEV);
+		err = nftnl_chain_set_str(c, NFTNL_CHAIN_DEV,
+			mnl_attr_get_str(tb[NFTA_HOOK_DEV]));
+		if (err)
+			return err;
 	}
 
 	return 0;
@@ -536,54 +533,44 @@ int nftnl_chain_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_chain *c)
 		return -1;
 
 	if (tb[NFTA_CHAIN_NAME]) {
-		if (c->flags & (1 << NFTNL_CHAIN_NAME))
-			xfree(c->name);
-		c->name = strdup(mnl_attr_get_str(tb[NFTA_CHAIN_NAME]));
-		if (!c->name)
-			return -1;
-		c->flags |= (1 << NFTNL_CHAIN_NAME);
+		ret = nftnl_chain_set_str(c, NFTNL_CHAIN_NAME,
+			mnl_attr_get_str(tb[NFTA_CHAIN_NAME]));
+		if (ret)
+			return ret;
 	}
 	if (tb[NFTA_CHAIN_TABLE]) {
-		if (c->flags & (1 << NFTNL_CHAIN_TABLE))
-			xfree(c->table);
-		c->table = strdup(mnl_attr_get_str(tb[NFTA_CHAIN_TABLE]));
-		if (!c->table)
-			return -1;
-		c->flags |= (1 << NFTNL_CHAIN_TABLE);
+		ret = nftnl_chain_set_str(c, NFTNL_CHAIN_TABLE,
+			mnl_attr_get_str(tb[NFTA_CHAIN_TABLE]));
+		if (ret)
+			return ret;
 	}
 	if (tb[NFTA_CHAIN_HOOK]) {
 		ret = nftnl_chain_parse_hook(tb[NFTA_CHAIN_HOOK], c);
 		if (ret < 0)
 			return ret;
 	}
-	if (tb[NFTA_CHAIN_POLICY]) {
-		c->policy = ntohl(mnl_attr_get_u32(tb[NFTA_CHAIN_POLICY]));
-		c->flags |= (1 << NFTNL_CHAIN_POLICY);
-	}
-	if (tb[NFTA_CHAIN_USE]) {
-		c->use = ntohl(mnl_attr_get_u32(tb[NFTA_CHAIN_USE]));
-		c->flags |= (1 << NFTNL_CHAIN_USE);
-	}
+	if (tb[NFTA_CHAIN_POLICY])
+		nftnl_chain_set_u32(c, NFTNL_CHAIN_POLICY,
+			ntohl(mnl_attr_get_u32(tb[NFTA_CHAIN_POLICY])));
+	if (tb[NFTA_CHAIN_USE])
+		nftnl_chain_set_u32(c, NFTNL_CHAIN_USE,
+			ntohl(mnl_attr_get_u32(tb[NFTA_CHAIN_USE])));
 	if (tb[NFTA_CHAIN_COUNTERS]) {
 		ret = nftnl_chain_parse_counters(tb[NFTA_CHAIN_COUNTERS], c);
 		if (ret < 0)
 			return ret;
 	}
-	if (tb[NFTA_CHAIN_HANDLE]) {
-		c->handle = be64toh(mnl_attr_get_u64(tb[NFTA_CHAIN_HANDLE]));
-		c->flags |= (1 << NFTNL_CHAIN_HANDLE);
-	}
+	if (tb[NFTA_CHAIN_HANDLE])
+		nftnl_chain_set_u64(c, NFTNL_CHAIN_HANDLE,
+			be64toh(mnl_attr_get_u64(tb[NFTA_CHAIN_HANDLE])));
 	if (tb[NFTA_CHAIN_TYPE]) {
-		if (c->flags & (1 << NFTNL_CHAIN_TYPE))
-			xfree(c->type);
-		c->type = strdup(mnl_attr_get_str(tb[NFTA_CHAIN_TYPE]));
-		if (!c->type)
-			return -1;
-		c->flags |= (1 << NFTNL_CHAIN_TYPE);
+		ret = nftnl_chain_set_str(c, NFTNL_CHAIN_TYPE,
+			mnl_attr_get_str(tb[NFTA_CHAIN_TYPE]));
+		if (ret)
+			return ret;
 	}
 
-	c->family = nfg->nfgen_family;
-	c->flags |= (1 << NFTNL_CHAIN_FAMILY);
+	nftnl_chain_set_u32(c, NFTNL_CHAIN_FAMILY, nfg->nfgen_family);
 
 	return ret;
 }

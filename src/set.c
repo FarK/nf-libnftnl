@@ -421,10 +421,9 @@ static int nftnl_set_desc_parse(struct nftnl_set *s,
 	if (mnl_attr_parse_nested(attr, nftnl_set_desc_parse_attr_cb, tb) < 0)
 		return -1;
 
-	if (tb[NFTA_SET_DESC_SIZE]) {
-		s->desc.size = ntohl(mnl_attr_get_u32(tb[NFTA_SET_DESC_SIZE]));
-		s->flags |= (1 << NFTNL_SET_DESC_SIZE);
-	}
+	if (tb[NFTA_SET_DESC_SIZE])
+		nftnl_set_set_u32(s, NFTNL_SET_DESC_SIZE,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_DESC_SIZE])));
 
 	return 0;
 }
@@ -439,65 +438,51 @@ int nftnl_set_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_set *s)
 		return -1;
 
 	if (tb[NFTA_SET_TABLE]) {
-		if (s->flags & (1 << NFTNL_SET_TABLE))
-			xfree(s->table);
-		s->table = strdup(mnl_attr_get_str(tb[NFTA_SET_TABLE]));
-		if (!s->table)
-			return -1;
-		s->flags |= (1 << NFTNL_SET_TABLE);
+		ret = nftnl_set_set_str(s, NFTNL_SET_TABLE,
+			mnl_attr_get_str(tb[NFTA_SET_TABLE]));
+		if (ret)
+			return ret;
 	}
 	if (tb[NFTA_SET_NAME]) {
-		if (s->flags & (1 << NFTNL_SET_NAME))
-			xfree(s->name);
-		s->name = strdup(mnl_attr_get_str(tb[NFTA_SET_NAME]));
-		if (!s->name)
-			return -1;
-		s->flags |= (1 << NFTNL_SET_NAME);
+		ret = nftnl_set_set_str(s, NFTNL_SET_NAME,
+			mnl_attr_get_str(tb[NFTA_SET_NAME]));
+		if (ret)
+			return ret;
 	}
-	if (tb[NFTA_SET_FLAGS]) {
-		s->set_flags = ntohl(mnl_attr_get_u32(tb[NFTA_SET_FLAGS]));
-		s->flags |= (1 << NFTNL_SET_FLAGS);
-	}
-	if (tb[NFTA_SET_KEY_TYPE]) {
-		s->key_type = ntohl(mnl_attr_get_u32(tb[NFTA_SET_KEY_TYPE]));
-		s->flags |= (1 << NFTNL_SET_KEY_TYPE);
-	}
-	if (tb[NFTA_SET_KEY_LEN]) {
-		s->key_len = ntohl(mnl_attr_get_u32(tb[NFTA_SET_KEY_LEN]));
-		s->flags |= (1 << NFTNL_SET_KEY_LEN);
-	}
-	if (tb[NFTA_SET_DATA_TYPE]) {
-		s->data_type = ntohl(mnl_attr_get_u32(tb[NFTA_SET_DATA_TYPE]));
-		s->flags |= (1 << NFTNL_SET_DATA_TYPE);
-	}
-	if (tb[NFTA_SET_DATA_LEN]) {
-		s->data_len = ntohl(mnl_attr_get_u32(tb[NFTA_SET_DATA_LEN]));
-		s->flags |= (1 << NFTNL_SET_DATA_LEN);
-	}
-	if (tb[NFTA_SET_ID]) {
-		s->id = ntohl(mnl_attr_get_u32(tb[NFTA_SET_ID]));
-		s->flags |= (1 << NFTNL_SET_ID);
-	}
-	if (tb[NFTA_SET_POLICY]) {
-		s->policy = ntohl(mnl_attr_get_u32(tb[NFTA_SET_POLICY]));
-		s->flags |= (1 << NFTNL_SET_POLICY);
-	}
-	if (tb[NFTA_SET_TIMEOUT]) {
-		s->timeout = be64toh(mnl_attr_get_u64(tb[NFTA_SET_TIMEOUT]));
-		s->flags |= (1 << NFTNL_SET_TIMEOUT);
-	}
-	if (tb[NFTA_SET_GC_INTERVAL]) {
-		s->gc_interval = ntohl(mnl_attr_get_u32(tb[NFTA_SET_GC_INTERVAL]));
-		s->flags |= (1 << NFTNL_SET_GC_INTERVAL);
-	}
+	if (tb[NFTA_SET_FLAGS])
+		nftnl_set_set_u32(s, NFTNL_SET_FLAGS,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_FLAGS])));
+	if (tb[NFTA_SET_KEY_TYPE])
+		nftnl_set_set_u32(s, NFTNL_SET_KEY_TYPE,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_KEY_TYPE])));
+	if (tb[NFTA_SET_KEY_LEN])
+		nftnl_set_set_u32(s, NFTNL_SET_KEY_LEN,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_KEY_LEN])));
+	if (tb[NFTA_SET_DATA_TYPE])
+		nftnl_set_set_u32(s, NFTNL_SET_DATA_TYPE,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_DATA_TYPE])));
+	if (tb[NFTA_SET_DATA_LEN])
+		nftnl_set_set_u32(s, NFTNL_SET_DATA_LEN,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_DATA_LEN])));
+	if (tb[NFTA_SET_ID])
+		nftnl_set_set_u32(s, NFTNL_SET_ID,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_ID])));
+	if (tb[NFTA_SET_POLICY])
+		nftnl_set_set_u32(s, NFTNL_SET_POLICY,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_POLICY])));
+	if (tb[NFTA_SET_TIMEOUT])
+		nftnl_set_set_u64(s, NFTNL_SET_TIMEOUT,
+			be64toh(mnl_attr_get_u64(tb[NFTA_SET_TIMEOUT])));
+	if (tb[NFTA_SET_GC_INTERVAL])
+		nftnl_set_set_u32(s, NFTNL_SET_GC_INTERVAL,
+			ntohl(mnl_attr_get_u32(tb[NFTA_SET_GC_INTERVAL])));
 	if (tb[NFTA_SET_DESC]) {
 		ret = nftnl_set_desc_parse(s, tb[NFTA_SET_DESC]);
 		if (ret < 0)
 			return ret;
 	}
 
-	s->family = nfg->nfgen_family;
-	s->flags |= (1 << NFTNL_SET_FAMILY);
+	nftnl_set_set_u32(s, NFTNL_SET_FAMILY, nfg->nfgen_family);
 
 	return 0;
 }
